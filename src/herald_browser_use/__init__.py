@@ -11,6 +11,8 @@ Reports are sent to Herald (https://github.com/siddhi-bansal/herald-browser-use)
 """
 
 import os
+import re
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
@@ -79,6 +81,43 @@ def _site_for(page_url: str, site: str | None) -> str:
 	return site or urlparse(page_url).hostname or page_url
 
 
+Redact = Iterable[str] | Mapping[str, Any] | None
+
+_EMAIL = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+')
+_CARD = re.compile(r'(?<![\w-])\d(?:[ -]?\d){12,18}(?![\w-])')
+_PHONE = re.compile(r'(?<![\w-])\+?\(?\d[\d\s().-]{8,}\d(?![\w-])')
+
+
+def _redact_values(redact: Redact) -> list[str]:
+	"""Flatten the values to hide, longest first. Accepts browser-use's sensitive_data dict."""
+	if redact is None:
+		return []
+	values: list[str] = []
+
+	def add(v: Any) -> None:
+		if isinstance(v, Mapping):
+			for inner in v.values():
+				add(inner)
+		elif isinstance(v, str) and len(v.strip()) >= 3:
+			values.append(v.strip())
+
+	if isinstance(redact, Mapping):
+		add(redact)
+	else:
+		for v in redact:
+			add(v)
+	return sorted(set(values), key=len, reverse=True)
+
+
+def _scrub(text: str, values: list[str]) -> str:
+	"""Remove personal data the model may have copied into a report."""
+	for v in values:
+		text = re.sub(re.escape(v), '[redacted]', text, flags=re.IGNORECASE)
+	text = _EMAIL.sub('[email]', text)
+	text = _CARD.sub('[card number]', text)
+	return _PHONE.sub(lambda m: '[phone]' if 10 <= sum(c.isdigit() for c in m.group()) <= 15 else m.group(), text)
+
+
 # Herald's per-field limits; longer text is cut rather than rejected.
 MAX_LENGTHS = {
 	'site': 253,
@@ -91,9 +130,17 @@ MAX_LENGTHS = {
 }
 
 
-async def _send(report: dict[str, Any], herald_url: str | None, client: httpx.AsyncClient | None) -> str | None:
-	"""POST a report to Herald. Returns an error message, or None on success. Never raises."""
-	body = {k: v[: MAX_LENGTHS[k]] if k in MAX_LENGTHS else v for k, v in report.items() if v is not None}
+async def _send(
+	report: dict[str, Any], herald_url: str | None, client: httpx.AsyncClient | None, redact: list[str]
+) -> str | None:
+	"""Scrub and POST a report to Herald. Returns an error message, or None on success. Never raises."""
+	body = {}
+	for k, v in report.items():
+		if v is None:
+			continue
+		if k in MAX_LENGTHS:  # free text: scrub (except the site name) and cut to length
+			v = (v if k == 'site' else _scrub(v, redact))[: MAX_LENGTHS[k]]
+		body[k] = v
 	try:
 		if client is not None:
 			res = await client.post(f'{_herald_url(herald_url)}/api/reports', json=body)
@@ -112,6 +159,7 @@ def herald_tools(
 	*,
 	site: str | None = None,
 	herald_url: str | None = None,
+	redact: Redact = None,
 	client: httpx.AsyncClient | None = None,
 ) -> Tools:
 	"""Add a ``report_friction`` action to ``tools`` (or to a new ``Tools()``) and return it.
@@ -120,16 +168,20 @@ def herald_tools(
 		tools: Your existing Tools, if you have one.
 		site: Report every page under this site name instead of the page's hostname.
 		herald_url: Where to send reports. Defaults to $HERALD_URL, then Herald's public API.
+		redact: Values to remove from every report, such as the name, address, email and
+			phone your agent fills into forms. Accepts a list, or the same dict you pass to
+			Agent(sensitive_data=...). Emails, phone and card numbers are always removed.
 		client: An httpx.AsyncClient to send with (mainly for tests).
 	"""
 	tools = tools if tools is not None else Tools()
+	redact_values = _redact_values(redact)
 
 	# No `from __future__ import annotations` in this file: browser-use matches
 	# injected parameters like page_url by their real (non-string) annotation.
 	@tools.action(TOOL_DESCRIPTION, param_model=FrictionParams)
 	async def report_friction(params: FrictionParams, page_url: str) -> ActionResult:
 		report = {'site': _site_for(page_url, site), 'page_url': page_url, **params.model_dump()}
-		error = await _send(report, herald_url, client)
+		error = await _send(report, herald_url, client, redact_values)
 		if error:
 			return ActionResult(error=f'{error}. Continue your task.')
 		return ActionResult(
@@ -156,6 +208,7 @@ async def report_failed_run(
 	site: str | None = None,
 	herald_url: str | None = None,
 	skip_if_reported: bool = True,
+	redact: Redact = None,
 	client: httpx.AsyncClient | None = None,
 ) -> bool:
 	"""After ``await agent.run()``, report the run to Herald if it failed.
@@ -171,6 +224,7 @@ async def report_failed_run(
 		site: Report under this site name instead of the last page's hostname.
 		herald_url: Where to send reports. Defaults to $HERALD_URL, then Herald's public API.
 		skip_if_reported: Don't send if the agent already called report_friction.
+		redact: Values to remove from the report, as for herald_tools().
 		client: An httpx.AsyncClient to send with (mainly for tests).
 
 	Returns:
@@ -207,5 +261,6 @@ async def report_failed_run(
 		},
 		herald_url,
 		client,
+		_redact_values(redact),
 	)
 	return error is None

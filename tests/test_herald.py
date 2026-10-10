@@ -138,3 +138,30 @@ async def test_long_text_is_truncated_not_rejected():
 	await action.function(params=params, page_url='https://acme.com/')
 	assert len(sent[0]['body']['goal']) == 500
 	assert len(sent[0]['body']['what_went_wrong']) == 4000
+
+
+def test_scrub_removes_personal_data_and_keeps_the_rest():
+	from herald_browser_use import _redact_values, _scrub
+
+	values = _redact_values({'name': 'Jane Doe', 'address': '1 Market St', 'shop.com': {'zip': '94105'}})
+	text = (
+		'Typed Jane Doe, 1 MARKET ST, 94105, jane@x.com, (415) 555-0123 and card 4242 4242 4242 4242. '
+		'Price $120.00, qty 2, ZIP+4 94105-1234 on 2026-10-10.'
+	)
+	out = _scrub(text, values)
+	assert out == (
+		'Typed [redacted], [redacted], [redacted], [email], [phone] and card [card number]. '
+		'Price $120.00, qty 2, ZIP+4 [redacted]-1234 on 2026-10-10.'
+	)
+
+
+async def test_reports_are_scrubbed_before_sending():
+	client, sent = recording_client()
+	action = get_action(herald_tools(client=client, redact=['Jane Doe']))
+	params = FrictionParams(
+		goal='Check out', what_i_tried='Entered Jane Doe and jane@x.com', what_went_wrong='w', severity='low'
+	)
+	await action.function(params=params, page_url='https://acme.com/?email=jane@x.com')
+	body = json.dumps(sent[0]['body'])
+	assert 'Jane' not in body and 'jane@x.com' not in body
+	assert sent[0]['body']['site'] == 'acme.com'
