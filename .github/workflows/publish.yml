@@ -1,0 +1,27 @@
+# Publishes to PyPI when a GitHub release is published, using PyPI trusted
+# publishing (GitHub's OIDC identity), so no PyPI token is stored anywhere.
+# PyPI side: a trusted publisher for owner siddhi-bansal, repo
+# herald-browser-use, workflow publish.yml, environment pypi.
+name: publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
