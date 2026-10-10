@@ -52,19 +52,34 @@ You pass `goal` yourself, in general terms, because the agent's task text often 
 
 Each report is a small JSON object with the fields above plus the site and page URL. It goes to `https://herald-api.siddhibansal2604.workers.dev/api/reports`. Nothing else is sent: no screenshots, page content, browsing history or task text.
 
-The model is told not to include personal data such as card numbers, passwords or addresses. browser-use's `sensitive_data` option keeps real values out of the model's view entirely.
+Personal data is removed before anything is sent:
+
+- The model is told not to include personal data such as card numbers, passwords or addresses.
+- Emails, phone numbers and card numbers are replaced automatically.
+- Pass the values your agent types into forms, and they're replaced too:
+
+  ```python
+  herald_tools(redact=["Jane Doe", "1 Market St", "jane@example.com"])
+  # or the same dict you give Agent(sensitive_data=...)
+  herald_tools(redact=sensitive_data)
+  ```
 
 Reporting never interrupts your agent. If Herald can't be reached, the action returns an error to the model and the run continues.
 
 ## Options
 
 ```python
-herald_tools(tools=None, *, site=None, herald_url=None)
-report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True)
+herald_tools(tools=None, *, site=None, herald_url=None, redact=None)
+report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True, redact=None)
 ```
 
 - `site`: report under a name of your choice instead of the page's hostname.
 - `herald_url`: send reports somewhere else. The `HERALD_URL` environment variable also works.
+- `redact`: values to remove from reports (see above).
+
+### Strict tool schemas
+
+If you make Anthropic's API enforce tool schemas strictly (`"strict": true`), every extra action adds to a compiled grammar with a size limit, and browser-use's default actions are already close to it. If you see *"The compiled grammar is too large"*, exclude a few actions you don't need, e.g. `Tools(exclude_actions=["switch", "close", "go_back"])`, before passing them to `herald_tools()`. browser-use doesn't use strict tool schemas with Anthropic by default.
 
 ## Development
 
