@@ -7,8 +7,7 @@ Two ways to send reports, use either or both:
 - ``report_failed_run()`` sends one report after a run that failed, built
   from the run's history, for failures the agent didn't report itself.
 
-Reports go to Herald (https://github.com/siddhi-bansal/herald-browser-use),
-which groups them by website and passes them on to the site's owners.
+Reports are sent to Herald (https://github.com/siddhi-bansal/herald-browser-use).
 """
 
 import os
