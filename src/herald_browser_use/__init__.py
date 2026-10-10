@@ -1,21 +1,28 @@
 """Herald for browser-use: let your agent tell websites where it got stuck.
 
-``herald_tools()`` gives the agent a ``report_friction`` action it calls
-itself when it gets stuck, slowed down, or has to work around something.
+Two ways to send reports, use either or both:
+
+- ``herald_tools()`` gives the agent a ``report_friction`` action it calls
+  itself when it gets stuck, slowed down, or has to work around something.
+- ``report_failed_run()`` sends one report after a run that failed, built
+  from the run's history, for failures the agent didn't report itself.
 
 Reports go to Herald (https://github.com/siddhi-bansal/herald-browser-use),
 which groups them by website and passes them on to the site's owners.
 """
 
 import os
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
 import httpx
 from browser_use import ActionResult, Tools
 from pydantic import BaseModel, Field
 
-__all__ = ['DEFAULT_HERALD_URL', 'FrictionParams', 'herald_tools']
+if TYPE_CHECKING:
+	from browser_use import Agent
+
+__all__ = ['DEFAULT_HERALD_URL', 'FrictionParams', 'herald_tools', 'report_failed_run']
 
 DEFAULT_HERALD_URL = 'https://herald-api.siddhibansal2604.workers.dev'
 
@@ -120,3 +127,73 @@ def herald_tools(
 		)
 
 	return tools
+
+
+def _failed(agent: "Agent") -> bool:
+	history = agent.history
+	validated = history.is_validated()  # the judge's verdict, when use_judge is on
+	if validated is not None:
+		return not validated
+	return history.is_successful() is not True
+
+
+async def report_failed_run(
+	agent: "Agent",
+	*,
+	goal: str,
+	site: str | None = None,
+	herald_url: str | None = None,
+	skip_if_reported: bool = True,
+	client: httpx.AsyncClient | None = None,
+) -> bool:
+	"""After ``await agent.run()``, report the run to Herald if it failed.
+
+	A run counts as failed if the judge says so (with ``use_judge=True``) or,
+	without a judge, if the agent didn't finish successfully.
+
+	Args:
+		agent: The agent, after its run.
+		goal: The task in general terms, without personal details, e.g.
+			"Buy one item as a guest and reach the payment page". The agent's own
+			task text isn't sent, because it often contains names and addresses.
+		site: Report under this site name instead of the last page's hostname.
+		herald_url: Where to send reports. Defaults to $HERALD_URL, then Herald's public API.
+		skip_if_reported: Don't send if the agent already called report_friction.
+		client: An httpx.AsyncClient to send with (mainly for tests).
+
+	Returns:
+		True if a report was sent.
+	"""
+	history = agent.history
+	if not _failed(agent):
+		return False
+	if skip_if_reported and 'report_friction' in history.action_names():
+		return False
+
+	page_url = next((u for u in reversed(history.urls()) if u and u.startswith('http')), None)
+	if page_url is None:
+		return False  # never reached a website
+
+	actions = [a for a in history.action_names() if a != 'done']
+	what_i_tried = f'Ran {history.number_of_steps()} steps. Last actions: {", ".join(actions[-8:]) or "none"}.'
+
+	judgement = history.judgement() or {}
+	what_went_wrong = (
+		judgement.get('failure_reason')
+		or (history.final_result() if history.is_done() else None)
+		or 'The agent stopped before finishing the task.'
+	)
+
+	error = await _send(
+		{
+			'site': _site_for(page_url, site),
+			'page_url': page_url,
+			'goal': goal[:500],
+			'what_i_tried': what_i_tried[:4000],
+			'what_went_wrong': what_went_wrong[:4000],
+			'severity': 'blocking',
+		},
+		herald_url,
+		client,
+	)
+	return error is None

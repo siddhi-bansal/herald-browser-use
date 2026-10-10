@@ -1,8 +1,10 @@
 import json
+from types import SimpleNamespace
 
 import httpx
+import pytest
 
-from herald_browser_use import FrictionParams, herald_tools
+from herald_browser_use import FrictionParams, herald_tools, report_failed_run
 
 
 def recording_client(status: int = 201):
@@ -69,3 +71,54 @@ async def test_action_returns_error_instead_of_raising():
 	params = FrictionParams(goal='g', what_i_tried='t', what_went_wrong='w', severity='low')
 	result = await action.function(params=params, page_url='https://acme.com/')
 	assert result.error and '400' in result.error
+
+
+def fake_agent(*, successful=False, validated=None, actions=('navigate', 'click', 'done'), urls=None, judgement=None):
+	history = SimpleNamespace(
+		is_validated=lambda: validated,
+		is_successful=lambda: successful,
+		is_done=lambda: True,
+		final_result=lambda: 'Could not continue past the address step',
+		action_names=lambda: list(actions),
+		urls=lambda: urls if urls is not None else ['about:blank', 'https://acme.com/', 'https://acme.com/checkout'],
+		number_of_steps=lambda: 12,
+		judgement=lambda: judgement,
+	)
+	return SimpleNamespace(history=history, task='Buy a mug and ship it to Jane Doe, 1 Main St')
+
+
+async def test_reports_failed_run_without_task_text():
+	client, sent = recording_client()
+	ok = await report_failed_run(fake_agent(), goal='Buy one item as a guest', client=client)
+	assert ok
+	body = sent[0]['body']
+	assert body['site'] == 'acme.com'
+	assert body['page_url'] == 'https://acme.com/checkout'
+	assert body['goal'] == 'Buy one item as a guest'
+	assert 'Jane' not in json.dumps(body)
+	assert body['what_i_tried'] == 'Ran 12 steps. Last actions: navigate, click.'
+	assert body['what_went_wrong'] == 'Could not continue past the address step'
+	assert body['severity'] == 'blocking'
+
+
+async def test_prefers_judge_verdict_and_reason():
+	client, sent = recording_client()
+	agent = fake_agent(successful=True, validated=False, judgement={'failure_reason': 'Quantity was 2, not 1'})
+	assert await report_failed_run(agent, goal='g', client=client)
+	assert sent[0]['body']['what_went_wrong'] == 'Quantity was 2, not 1'
+
+
+@pytest.mark.parametrize(
+	'agent',
+	[
+		fake_agent(successful=True),
+		fake_agent(successful=False, validated=True),
+		fake_agent(actions=('navigate', 'report_friction', 'done')),
+		fake_agent(urls=[None, 'about:blank']),
+	],
+	ids=['succeeded', 'judge-approved', 'already-reported', 'no-website'],
+)
+async def test_skips_runs_that_need_no_report(agent):
+	client, sent = recording_client()
+	assert not await report_failed_run(agent, goal='g', client=client)
+	assert sent == []
