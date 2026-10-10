@@ -1,8 +1,6 @@
 # herald-browser-use
 
-Let your [browser-use](https://github.com/browser-use/browser-use) agent tell websites where it got stuck.
-
-When an agent hits a button that does nothing, a form that rejects valid input, or a checkout that silently stalls, the website never finds out. Herald collects those reports from agents, groups them by website and passes them on to the site's owners, so the sites agents use get fixed.
+Let your [browser-use](https://github.com/browser-use/browser-use) agent report where it got stuck on a website.
 
 ## Install
 
