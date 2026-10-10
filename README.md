@@ -79,7 +79,7 @@ report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=T
 
 ### Strict tool schemas
 
-If you make Anthropic's API enforce tool schemas strictly (`"strict": true`), every extra action adds to a compiled grammar with a size limit, and browser-use's default actions are already close to it. If you see *"The compiled grammar is too large"*, exclude a few actions you don't need, e.g. `Tools(exclude_actions=["switch", "close", "go_back"])`, before passing them to `herald_tools()`. browser-use doesn't use strict tool schemas with Anthropic by default.
+If you make Anthropic's API enforce tool schemas strictly (`"strict": true`), every extra action adds to a compiled grammar with a size limit, and browser-use's full default action set can exceed it on its own. If you see *"The compiled grammar is too large"*, exclude a few actions you don't need, e.g. `Tools(exclude_actions=["switch", "close", "go_back"])`, before passing them to `herald_tools()`. browser-use doesn't use strict tool schemas with Anthropic by default.
 
 ## Development
 
