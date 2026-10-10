@@ -122,3 +122,19 @@ async def test_skips_runs_that_need_no_report(agent):
 	client, sent = recording_client()
 	assert not await report_failed_run(agent, goal='g', client=client)
 	assert sent == []
+
+
+def test_schema_sent_to_the_model_has_no_length_limits():
+	# Length constraints can be rejected by providers' strict modes or bloat their
+	# tool grammars; Herald's limits are applied when sending instead.
+	schema = json.dumps(FrictionParams.model_json_schema())
+	assert 'maxLength' not in schema and 'minLength' not in schema
+
+
+async def test_long_text_is_truncated_not_rejected():
+	client, sent = recording_client()
+	action = get_action(herald_tools(client=client))
+	params = FrictionParams(goal='g' * 900, what_i_tried='t', what_went_wrong='w' * 5000, severity='low')
+	await action.function(params=params, page_url='https://acme.com/')
+	assert len(sent[0]['body']['goal']) == 500
+	assert len(sent[0]['body']['what_went_wrong']) == 4000

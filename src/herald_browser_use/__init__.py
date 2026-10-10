@@ -40,28 +40,29 @@ Severity = Literal['low', 'medium', 'high', 'blocking']
 
 
 class FrictionParams(BaseModel):
-	"""What the model fills in. The site and page URL are taken from the browser."""
+	"""What the model fills in. The site and page URL are taken from the browser.
+
+	No length limits here on purpose: browser-use sends this schema to the model
+	(in strict mode for OpenAI), and length constraints can be rejected by the
+	provider or bloat strict tool grammars. _send() truncates to Herald's limits.
+	"""
 
 	goal: str = Field(
-		max_length=500,
 		description='What you were trying to accomplish, e.g. "Find the shipping cost to Canada before buying".',
 	)
 	what_i_tried: str = Field(
-		max_length=4000,
 		description='The concrete steps you took, in order, e.g. "Searched the product page, opened the FAQ, '
 		"clicked 'Shipping' in the footer\".",
 	)
 	element: str | None = Field(
 		default=None,
-		max_length=300,
 		description='The exact button, link or form field involved, named as it appears on the page, e.g. '
 		"\"'Continue to payment' button\" or \"'ZIP code' field\". Leave out if the problem wasn't about one "
 		"element (e.g. information you couldn't find).",
 	)
-	what_went_wrong: str = Field(max_length=4000, description='What actually happened and why it was a problem.')
+	what_went_wrong: str = Field(description='What actually happened and why it was a problem.')
 	error_shown: str | None = Field(
 		default=None,
-		max_length=1000,
 		description='Any error or warning the page showed, copied word for word. Write "none" if the page showed no error.',
 	)
 	severity: Severity = Field(
@@ -78,9 +79,21 @@ def _site_for(page_url: str, site: str | None) -> str:
 	return site or urlparse(page_url).hostname or page_url
 
 
+# Herald's per-field limits; longer text is cut rather than rejected.
+MAX_LENGTHS = {
+	'site': 253,
+	'page_url': 2048,
+	'goal': 500,
+	'what_i_tried': 4000,
+	'element': 300,
+	'what_went_wrong': 4000,
+	'error_shown': 1000,
+}
+
+
 async def _send(report: dict[str, Any], herald_url: str | None, client: httpx.AsyncClient | None) -> str | None:
 	"""POST a report to Herald. Returns an error message, or None on success. Never raises."""
-	body = {k: v for k, v in report.items() if v is not None}
+	body = {k: v[: MAX_LENGTHS[k]] if k in MAX_LENGTHS else v for k, v in report.items() if v is not None}
 	try:
 		if client is not None:
 			res = await client.post(f'{_herald_url(herald_url)}/api/reports', json=body)
@@ -187,9 +200,9 @@ async def report_failed_run(
 		{
 			'site': _site_for(page_url, site),
 			'page_url': page_url,
-			'goal': goal[:500],
-			'what_i_tried': what_i_tried[:4000],
-			'what_went_wrong': what_went_wrong[:4000],
+			'goal': goal,
+			'what_i_tried': what_i_tried,
+			'what_went_wrong': what_went_wrong,
 			'severity': 'blocking',
 		},
 		herald_url,
