@@ -109,13 +109,34 @@ def _redact_values(redact: Redact) -> list[str]:
 	return sorted(set(values), key=len, reverse=True)
 
 
+def _luhn(digits: str) -> bool:
+	"""The checksum every real card number passes; product and order ids mostly don't."""
+	total = 0
+	for i, d in enumerate(reversed(digits)):
+		n = int(d) * (2 if i % 2 else 1)
+		total += n - 9 if n > 9 else n
+	return total % 10 == 0
+
+
+def _card(match: re.Match) -> str:
+	digits = re.sub(r'\D', '', match.group())
+	return '[card number]' if _luhn(digits) else match.group()
+
+
+def _scrub_url(url: str, values: list[str]) -> str:
+	"""URLs carry long ids (?variant=44012345678901), so only emails and known values go."""
+	for v in values:
+		url = re.sub(re.escape(v), '[redacted]', url, flags=re.IGNORECASE)
+	return _EMAIL.sub('[email]', url)
+
+
 def _scrub(text: str, values: list[str]) -> str:
 	"""Remove personal data the model may have copied into a report."""
 	for v in values:
 		text = re.sub(re.escape(v), '[redacted]', text, flags=re.IGNORECASE)
 	text = _EMAIL.sub('[email]', text)
-	text = _CARD.sub('[card number]', text)
-	return _PHONE.sub(lambda m: '[phone]' if 10 <= sum(c.isdigit() for c in m.group()) <= 15 else m.group(), text)
+	text = _CARD.sub(_card, text)
+	return _PHONE.sub(lambda m: '[phone]' if 10 <= sum(c.isdigit() for c in m.group()) <= 13 else m.group(), text)
 
 
 # Herald's per-field limits; longer text is cut rather than rejected.
@@ -139,7 +160,11 @@ async def _send(
 		if v is None:
 			continue
 		if k in MAX_LENGTHS:  # free text: scrub (except the site name) and cut to length
-			v = (v if k == 'site' else _scrub(v, redact))[: MAX_LENGTHS[k]]
+			if k == 'page_url':
+				v = _scrub_url(v, redact)
+			elif k != 'site':
+				v = _scrub(v, redact)
+			v = v[: MAX_LENGTHS[k]]
 		body[k] = v
 	try:
 		if client is not None:

@@ -165,3 +165,18 @@ async def test_reports_are_scrubbed_before_sending():
 	body = json.dumps(sent[0]['body'])
 	assert 'Jane' not in body and 'jane@x.com' not in body
 	assert sent[0]['body']['site'] == 'acme.com'
+
+
+def test_scrub_keeps_ids_that_are_not_card_numbers():
+	from herald_browser_use import _scrub
+
+	# 4242... passes the card checksum; a Shopify variant id usually doesn't.
+	assert _scrub('variant 44012345678902 and card 4242424242424242', []) == "variant 44012345678902 and card [card number]"
+
+
+async def test_page_url_keeps_its_ids_but_loses_emails():
+	client, sent = recording_client()
+	action = get_action(herald_tools(client=client, redact=['Jane Doe']))
+	params = FrictionParams(goal='g', what_i_tried='t', what_went_wrong='w', severity='low')
+	await action.function(params=params, page_url='https://acme.com/products/x?variant=4242424242424242&email=jane@x.com')
+	assert sent[0]['body']['page_url'] == 'https://acme.com/products/x?variant=4242424242424242&email=[email]'
