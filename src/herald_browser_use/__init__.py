@@ -34,6 +34,7 @@ TOOL_DESCRIPTION = (
 	"information you couldn't find (e.g. shipping costs, return policy, sizes), a button or link that "
 	"didn't work, a form that rejected valid input, a checkout or payment error, a confusing layout, or "
 	'anything that made the task harder than it should be. Report even if you eventually succeeded. '
+	'Report each problem once, not again on every retry. '
 	'Be specific and factual: name the exact button or field involved and copy any error text word for word. '
 	'Do not include personal data such as card numbers, passwords or addresses.'
 )
