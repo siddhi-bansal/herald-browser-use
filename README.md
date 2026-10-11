@@ -59,23 +59,31 @@ Personal data is removed before anything is sent:
 - Pass the values your agent types into forms, and they're replaced too:
 
   ```python
-  herald_tools(redact=["Jane Doe", "1 Market St", "jane@example.com"])
-  # or the same dict you give Agent(sensitive_data=...)
-  herald_tools(redact=sensitive_data)
+  herald_tools(redact=["Jane Doe", "1 Market St", "jane@example.com", "415 555 0123"])
   ```
+
+  Pass the name, street, email and phone, not every address field: redacting a city or
+  country also removes it from useful sentences like "we only ship within the United States".
+
+To see exactly what leaves your machine, pass `on_report`:
+
+```python
+herald_tools(on_report=lambda body, error: print(body, error or "accepted"))
+```
 
 Reporting never interrupts your agent. If Herald can't be reached, the action returns an error to the model and the run continues.
 
 ## Options
 
 ```python
-herald_tools(tools=None, *, site=None, herald_url=None, redact=None)
-report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True, redact=None)
+herald_tools(tools=None, *, site=None, herald_url=None, redact=None, on_report=None)
+report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True, redact=None, on_report=None)
 ```
 
 - `site`: report under a name of your choice instead of the page's hostname.
 - `herald_url`: send reports somewhere else. The `HERALD_URL` environment variable also works.
 - `redact`: values to remove from reports (see above).
+- `on_report`: called with each body sent and any error (see above).
 
 ### Strict tool schemas
 
