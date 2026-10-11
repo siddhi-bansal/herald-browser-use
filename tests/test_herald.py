@@ -180,3 +180,20 @@ async def test_page_url_keeps_its_ids_but_loses_emails():
 	params = FrictionParams(goal='g', what_i_tried='t', what_went_wrong='w', severity='low')
 	await action.function(params=params, page_url='https://acme.com/products/x?variant=4242424242424242&email=jane@x.com')
 	assert sent[0]['body']['page_url'] == 'https://acme.com/products/x?variant=4242424242424242&email=[email]'
+
+
+async def test_on_report_sees_the_exact_body_and_errors_never_escape():
+	client, sent = recording_client(status=400)
+	seen = []
+
+	async def log(body, error):
+		seen.append((body, error))
+		raise RuntimeError('a broken hook must not break the run')
+
+	action = get_action(herald_tools(client=client, on_report=log))
+	params = FrictionParams(goal='g', what_i_tried='mail jane@x.com', what_went_wrong='w', severity='low')
+	result = await action.function(params=params, page_url='https://acme.com/')
+	assert seen[0][0] == sent[0]['body']
+	assert seen[0][0]['what_i_tried'] == 'mail [email]'
+	assert '400' in seen[0][1]
+	assert result.error and '400' in result.error
