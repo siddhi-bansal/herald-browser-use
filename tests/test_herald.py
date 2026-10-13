@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from herald_browser_use import FrictionParams, herald_tools, report_failed_run
+from herald_browser_use import FrictionParams, herald_tips, herald_tools, report_failed_run
 
 
 @pytest.fixture(autouse=True)
@@ -220,3 +220,35 @@ async def test_api_key_is_sent_so_reports_are_credited(monkeypatch):
 	await get_action(herald_tools(client=client)).function(params=params, page_url='https://acme.com/')
 	await report_failed_run(fake_agent(), goal='g', client=client)
 	assert [s['auth'] for s in sent] == ['Bearer k1', 'Bearer k2', 'Bearer k2']
+
+
+def tips_client(status: int = 200, tips=None):
+	seen: list[httpx.Request] = []
+
+	def handler(request: httpx.Request) -> httpx.Response:
+		seen.append(request)
+		if status >= 400:
+			return httpx.Response(status, json={'error': 'Unauthorized'})
+		prompt = 'Known problems other AI agents reported on kuhl.com in the last 30 days.\n- [blocking] ...'
+		return httpx.Response(200, json={'site': 'kuhl.com', 'tips': tips or [], 'prompt': prompt})
+
+	return httpx.AsyncClient(transport=httpx.MockTransport(handler)), seen
+
+
+async def test_tips_returns_prompt_to_append_to_the_task():
+	client, seen = tips_client(tips=[{'severity': 'blocking'}])
+	text = await herald_tips('https://www.kuhl.com/checkout', api_key='k', herald_url='https://h.test', client=client)
+	assert text.startswith('\n\nKnown problems other AI agents reported on kuhl.com')
+	assert str(seen[0].url) == 'https://h.test/api/tips?site=www.kuhl.com'
+	assert seen[0].headers['authorization'] == 'Bearer k'
+
+
+async def test_tips_are_empty_when_there_are_none_or_on_errors(caplog):
+	client, _ = tips_client(tips=[])
+	assert await herald_tips('kuhl.com', api_key='k', client=client) == ''
+	client, _ = tips_client(status=401)
+	assert await herald_tips('kuhl.com', api_key='bad', client=client) == ''
+	client, seen = tips_client(tips=[{'severity': 'blocking'}])
+	assert await herald_tips('kuhl.com', client=client) == ''  # no key: don't even ask
+	assert seen == []
+	assert 'no API key' in caplog.text and '401' in caplog.text

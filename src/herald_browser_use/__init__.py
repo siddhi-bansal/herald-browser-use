@@ -7,10 +7,16 @@ Two ways to send reports, use either or both:
 - ``report_failed_run()`` sends one report after a run that failed, built
   from the run's history, for failures the agent didn't report itself.
 
+And one way to learn from other agents' reports:
+
+- ``herald_tips()`` returns the known problems on a site, as text to add to
+  the agent's task before it starts.
+
 Reports are sent to Herald (https://github.com/siddhi-bansal/herald-browser-use).
 """
 
 import inspect
+import logging
 import os
 import re
 from collections.abc import Callable, Iterable, Mapping
@@ -24,7 +30,9 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
 	from browser_use import Agent
 
-__all__ = ['DEFAULT_HERALD_URL', 'FrictionParams', 'herald_tools', 'report_failed_run']
+__all__ = ['DEFAULT_HERALD_URL', 'FrictionParams', 'herald_tips', 'herald_tools', 'report_failed_run']
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_HERALD_URL = 'https://herald-api.siddhibansal2604.workers.dev'
 
@@ -341,3 +349,52 @@ async def report_failed_run(
 		api_key,
 	)
 	return error is None
+
+
+async def herald_tips(
+	site: str,
+	*,
+	api_key: str | None = None,
+	herald_url: str | None = None,
+	client: httpx.AsyncClient | None = None,
+) -> str:
+	"""Known problems other agents reported on ``site``, as text to add to your agent's task.
+
+	Only high-confidence problems are included: high or blocking issues reported
+	more than once in the last 30 days. Add the text to the task before the run, so
+	the agent skips attempts known to fail and tells the user early if a step is broken::
+
+		task = "Buy a flannel shirt on kuhl.com" + await herald_tips("kuhl.com")
+
+	Args:
+		site: The site's hostname or any URL on it, e.g. "kuhl.com".
+		api_key: Your Herald API key (required for tips). Defaults to $HERALD_API_KEY.
+		herald_url: Where to ask. Defaults to $HERALD_URL, then Herald's public API.
+		client: An httpx.AsyncClient to send with (mainly for tests).
+
+	Returns:
+		The tips as text starting with a blank line, or "" if there are none or Herald
+		couldn't be asked (logged as a warning). Never raises, so a run never fails
+		because of tips.
+	"""
+	if not _api_key(api_key):
+		logger.warning('herald_tips: no API key (pass api_key= or set HERALD_API_KEY), so no tips')
+		return ''
+	if '://' in site:
+		site = urlparse(site).hostname or site
+	url = f'{_herald_url(herald_url)}/api/tips'
+	params, headers = {'site': site}, _auth_headers(api_key)
+	try:
+		if client is not None:
+			res = await client.get(url, params=params, headers=headers)
+		else:
+			async with httpx.AsyncClient(timeout=10) as own_client:
+				res = await own_client.get(url, params=params, headers=headers)
+		res.raise_for_status()
+		data = res.json()
+	except (httpx.HTTPError, ValueError) as e:
+		logger.warning('herald_tips: could not get tips for %s: %s', site, e)
+		return ''
+	if not data.get('tips'):
+		return ''
+	return '\n\n' + data['prompt']
