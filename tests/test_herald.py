@@ -260,3 +260,17 @@ async def test_failed_run_reports_say_where_they_came_from():
 	client, sent = recording_client()
 	await report_failed_run(fake_agent(), goal='g', client=client)
 	assert sent[0]['client'] == f'herald-browser-use/{__version__} (report_failed_run)'
+
+
+def test_get_api_key_signs_up_and_returns_the_key(monkeypatch):
+	import herald_browser_use
+
+	calls = []
+
+	def fake_post(url, json, headers, timeout):
+		calls.append((url, json, headers))
+		return httpx.Response(201, json={'key': 'hk_abc', 'name': 'shop-1a2b'}, request=httpx.Request('POST', url))
+
+	monkeypatch.setattr(herald_browser_use.httpx, 'post', fake_post)
+	assert herald_browser_use.get_api_key('me@x.com', 'Shop', herald_url='https://h.test') == 'hk_abc'
+	assert calls == [('https://h.test/api/keys', {'email': 'me@x.com', 'project': 'Shop'}, {'X-Herald-Client': herald_browser_use.CLIENT})]

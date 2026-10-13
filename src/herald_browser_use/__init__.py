@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
 	from browser_use import Agent
 
-__all__ = ['DEFAULT_HERALD_URL', 'FrictionParams', 'herald_tips', 'herald_tools', 'report_failed_run']
+__all__ = ['DEFAULT_HERALD_URL', 'FrictionParams', 'get_api_key', 'herald_tips', 'herald_tools', 'report_failed_run']
 
 logger = logging.getLogger(__name__)
 
@@ -417,3 +417,24 @@ async def herald_tips(
 	if not data.get('tips'):
 		return ''
 	return '\n\n' + data['prompt']
+
+
+def get_api_key(email: str, project: str | None = None, *, herald_url: str | None = None) -> str:
+	"""Sign up for a free Herald API key. Returns the key, which is shown only once.
+
+	The key unlocks tips and credits your reports to you. Save it, e.g. as the
+	HERALD_API_KEY environment variable. From a terminal::
+
+		python -m herald_browser_use signup you@example.com "what you're building"
+
+	Raises:
+		httpx.HTTPStatusError: if Herald refused (e.g. an invalid email).
+	"""
+	res = httpx.post(
+		f'{_herald_url(herald_url)}/api/keys',
+		json={'email': email, 'project': project},
+		headers={'X-Herald-Client': CLIENT},
+		timeout=10,
+	)
+	res.raise_for_status()
+	return res.json()['key']
