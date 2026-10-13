@@ -7,11 +7,23 @@ import pytest
 from herald_browser_use import FrictionParams, herald_tools, report_failed_run
 
 
+@pytest.fixture(autouse=True)
+def no_herald_env(monkeypatch):
+	for name in ('HERALD_URL', 'HERALD_API_KEY'):
+		monkeypatch.delenv(name, raising=False)
+
+
 def recording_client(status: int = 201):
 	sent: list[dict] = []
 
 	def handler(request: httpx.Request) -> httpx.Response:
-		sent.append({'url': str(request.url), 'body': json.loads(request.content)})
+		sent.append(
+			{
+				'url': str(request.url),
+				'body': json.loads(request.content),
+				'auth': request.headers.get('authorization'),
+			}
+		)
 		return httpx.Response(status, json={'id': 'x'} if status < 400 else {'error': 'Invalid report'})
 
 	return httpx.AsyncClient(transport=httpx.MockTransport(handler)), sent
@@ -52,6 +64,7 @@ async def test_action_posts_report_with_site_from_page():
 	assert sent == [
 		{
 			'url': 'https://h.test/api/reports',
+			'auth': None,
 			'body': {
 				'site': 'www.kuhl.com',
 				'page_url': 'https://www.kuhl.com/checkout?step=2',
@@ -197,3 +210,13 @@ async def test_on_report_sees_the_exact_body_and_errors_never_escape():
 	assert seen[0][0]['what_i_tried'] == 'mail [email]'
 	assert '400' in seen[0][1]
 	assert result.error and '400' in result.error
+
+
+async def test_api_key_is_sent_so_reports_are_credited(monkeypatch):
+	client, sent = recording_client()
+	params = FrictionParams(goal='g', what_i_tried='t', what_went_wrong='w', severity='low')
+	await get_action(herald_tools(client=client, api_key='k1')).function(params=params, page_url='https://acme.com/')
+	monkeypatch.setenv('HERALD_API_KEY', 'k2')
+	await get_action(herald_tools(client=client)).function(params=params, page_url='https://acme.com/')
+	await report_failed_run(fake_agent(), goal='g', client=client)
+	assert [s['auth'] for s in sent] == ['Bearer k1', 'Bearer k2', 'Bearer k2']

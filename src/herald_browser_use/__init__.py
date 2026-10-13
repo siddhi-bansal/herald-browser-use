@@ -79,6 +79,15 @@ def _herald_url(herald_url: str | None) -> str:
 	return (herald_url or os.environ.get('HERALD_URL') or DEFAULT_HERALD_URL).rstrip('/')
 
 
+def _api_key(api_key: str | None) -> str | None:
+	return api_key or os.environ.get('HERALD_API_KEY') or None
+
+
+def _auth_headers(api_key: str | None) -> dict[str, str]:
+	key = _api_key(api_key)
+	return {'Authorization': f'Bearer {key}'} if key else {}
+
+
 def _site_for(page_url: str, site: str | None) -> str:
 	return site or urlparse(page_url).hostname or page_url
 
@@ -161,10 +170,11 @@ async def _send(
 	client: httpx.AsyncClient | None,
 	redact: list[str],
 	on_report: OnReport = None,
+	api_key: str | None = None,
 ) -> str | None:
 	"""Scrub and POST a report to Herald. Returns an error message, or None on success. Never raises."""
 	body = _prepare(report, redact)
-	error = await _post(body, herald_url, client)
+	error = await _post(body, herald_url, client, api_key)
 	if on_report is not None:
 		try:
 			result = on_report(dict(body), error)
@@ -191,13 +201,17 @@ def _prepare(report: dict[str, Any], redact: list[str]) -> dict[str, Any]:
 	return body
 
 
-async def _post(body: dict[str, Any], herald_url: str | None, client: httpx.AsyncClient | None) -> str | None:
+async def _post(
+	body: dict[str, Any], herald_url: str | None, client: httpx.AsyncClient | None, api_key: str | None = None
+) -> str | None:
+	url = f'{_herald_url(herald_url)}/api/reports'
+	headers = _auth_headers(api_key)
 	try:
 		if client is not None:
-			res = await client.post(f'{_herald_url(herald_url)}/api/reports', json=body)
+			res = await client.post(url, json=body, headers=headers)
 		else:
 			async with httpx.AsyncClient(timeout=10) as own_client:
-				res = await own_client.post(f'{_herald_url(herald_url)}/api/reports', json=body)
+				res = await own_client.post(url, json=body, headers=headers)
 	except httpx.HTTPError as e:
 		return f'Could not reach Herald: {e}'
 	if res.status_code >= 400:
@@ -212,6 +226,7 @@ def herald_tools(
 	herald_url: str | None = None,
 	redact: Redact = None,
 	on_report: OnReport = None,
+	api_key: str | None = None,
 	client: httpx.AsyncClient | None = None,
 ) -> Tools:
 	"""Add a ``report_friction`` action to ``tools`` (or to a new ``Tools()``) and return it.
@@ -225,6 +240,8 @@ def herald_tools(
 			Agent(sensitive_data=...). Emails, phone and card numbers are always removed.
 		on_report: Called after each report with the exact body sent and an error message
 			(None if Herald accepted it), e.g. to log what leaves your machine. May be async.
+		api_key: Your Herald API key, so reports are credited to you. Defaults to
+			$HERALD_API_KEY. Optional: without one, reports are sent anonymously.
 		client: An httpx.AsyncClient to send with (mainly for tests).
 	"""
 	tools = tools if tools is not None else Tools()
@@ -235,7 +252,7 @@ def herald_tools(
 	@tools.action(TOOL_DESCRIPTION, param_model=FrictionParams)
 	async def report_friction(params: FrictionParams, page_url: str) -> ActionResult:
 		report = {'site': _site_for(page_url, site), 'page_url': page_url, **params.model_dump()}
-		error = await _send(report, herald_url, client, redact_values, on_report)
+		error = await _send(report, herald_url, client, redact_values, on_report, api_key)
 		if error:
 			return ActionResult(error=f'{error}. Continue your task.')
 		return ActionResult(
@@ -264,6 +281,7 @@ async def report_failed_run(
 	skip_if_reported: bool = True,
 	redact: Redact = None,
 	on_report: OnReport = None,
+	api_key: str | None = None,
 	client: httpx.AsyncClient | None = None,
 ) -> bool:
 	"""After ``await agent.run()``, report the run to Herald if it failed.
@@ -281,6 +299,7 @@ async def report_failed_run(
 		skip_if_reported: Don't send if the agent already called report_friction.
 		redact: Values to remove from the report, as for herald_tools().
 		on_report: Called with the body sent and any error, as for herald_tools().
+		api_key: Your Herald API key, as for herald_tools().
 		client: An httpx.AsyncClient to send with (mainly for tests).
 
 	Returns:
@@ -319,5 +338,6 @@ async def report_failed_run(
 		client,
 		_redact_values(redact),
 		on_report,
+		api_key,
 	)
 	return error is None
