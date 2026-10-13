@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from herald_browser_use import FrictionParams, herald_tips, herald_tools, report_failed_run
+from herald_browser_use import FrictionParams, __version__, herald_tips, herald_tools, report_failed_run
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +22,7 @@ def recording_client(status: int = 201):
 				'url': str(request.url),
 				'body': json.loads(request.content),
 				'auth': request.headers.get('authorization'),
+				'client': request.headers.get('x-herald-client'),
 			}
 		)
 		return httpx.Response(status, json={'id': 'x'} if status < 400 else {'error': 'Invalid report'})
@@ -65,6 +66,7 @@ async def test_action_posts_report_with_site_from_page():
 		{
 			'url': 'https://h.test/api/reports',
 			'auth': None,
+			'client': f'herald-browser-use/{__version__}',
 			'body': {
 				'site': 'www.kuhl.com',
 				'page_url': 'https://www.kuhl.com/checkout?step=2',
@@ -252,3 +254,9 @@ async def test_tips_are_empty_when_there_are_none_or_on_errors(caplog):
 	assert await herald_tips('kuhl.com', client=client) == ''  # no key: don't even ask
 	assert seen == []
 	assert 'no API key' in caplog.text and '401' in caplog.text
+
+
+async def test_failed_run_reports_say_where_they_came_from():
+	client, sent = recording_client()
+	await report_failed_run(fake_agent(), goal='g', client=client)
+	assert sent[0]['client'] == f'herald-browser-use/{__version__} (report_failed_run)'

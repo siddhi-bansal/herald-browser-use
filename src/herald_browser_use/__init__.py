@@ -17,6 +17,7 @@ Reports are sent to Herald (https://github.com/siddhi-bansal/herald-browser-use)
 
 import inspect
 import logging
+from importlib.metadata import PackageNotFoundError, version
 import os
 import re
 from collections.abc import Callable, Iterable, Mapping
@@ -91,9 +92,21 @@ def _api_key(api_key: str | None) -> str | None:
 	return api_key or os.environ.get('HERALD_API_KEY') or None
 
 
-def _auth_headers(api_key: str | None) -> dict[str, str]:
+try:
+	__version__ = version('herald-browser-use')
+except PackageNotFoundError:  # running from a source checkout
+	__version__ = '0.0.0'
+
+# Tells Herald which integration sent a request, so we can see adoption by version.
+CLIENT = f'herald-browser-use/{__version__}'
+
+
+def _auth_headers(api_key: str | None, kind: str | None = None) -> dict[str, str]:
+	headers = {'X-Herald-Client': f'{CLIENT} ({kind})' if kind else CLIENT}
 	key = _api_key(api_key)
-	return {'Authorization': f'Bearer {key}'} if key else {}
+	if key:
+		headers['Authorization'] = f'Bearer {key}'
+	return headers
 
 
 def _site_for(page_url: str, site: str | None) -> str:
@@ -179,10 +192,11 @@ async def _send(
 	redact: list[str],
 	on_report: OnReport = None,
 	api_key: str | None = None,
+	kind: str | None = None,
 ) -> str | None:
 	"""Scrub and POST a report to Herald. Returns an error message, or None on success. Never raises."""
 	body = _prepare(report, redact)
-	error = await _post(body, herald_url, client, api_key)
+	error = await _post(body, herald_url, client, api_key, kind)
 	if on_report is not None:
 		try:
 			result = on_report(dict(body), error)
@@ -210,10 +224,14 @@ def _prepare(report: dict[str, Any], redact: list[str]) -> dict[str, Any]:
 
 
 async def _post(
-	body: dict[str, Any], herald_url: str | None, client: httpx.AsyncClient | None, api_key: str | None = None
+	body: dict[str, Any],
+	herald_url: str | None,
+	client: httpx.AsyncClient | None,
+	api_key: str | None = None,
+	kind: str | None = None,
 ) -> str | None:
 	url = f'{_herald_url(herald_url)}/api/reports'
-	headers = _auth_headers(api_key)
+	headers = _auth_headers(api_key, kind)
 	try:
 		if client is not None:
 			res = await client.post(url, json=body, headers=headers)
@@ -347,6 +365,7 @@ async def report_failed_run(
 		_redact_values(redact),
 		on_report,
 		api_key,
+		kind='report_failed_run',
 	)
 	return error is None
 
