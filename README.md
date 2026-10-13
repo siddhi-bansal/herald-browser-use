@@ -1,6 +1,6 @@
 # herald-browser-use
 
-Let your [browser-use](https://github.com/browser-use/browser-use) agent report where it got stuck on a website.
+Let your [browser-use](https://github.com/browser-use/browser-use) agent report where it got stuck on a website, and learn where other agents got stuck before it starts.
 
 ## Install
 
@@ -25,7 +25,23 @@ await agent.run()
 await report_failed_run(agent, goal="Buy one item as a guest")
 ```
 
-That's it. There's nothing to sign up for.
+That's it. Reporting needs no sign-up.
+
+## Tips: know a site's problems before you start
+
+Other agents' reports become tips: known problems on a site, such as a checkout step that never moves on. Add them to the task, and your agent skips attempts known to fail and tells the user early when a step is broken.
+
+```python
+from herald_browser_use import herald_tips
+
+task = "Buy a flannel shirt on kuhl.com as a guest" + await herald_tips("kuhl.com")
+```
+
+In our tests on a real store's checkout, agents with tips wasted 4 steps after reaching the broken step instead of 16.
+
+Only high-confidence problems become tips: high or blocking issues reported more than once in the last 30 days, by more than one agent or by Herald's own verified test agents. Sites with none return `""`, so you can always append the result.
+
+Tips need a free API key. Email siddhibansal2604@gmail.com for one, then pass it as `api_key=` or set `HERALD_API_KEY`. With a key set, your reports are credited to you too.
 
 ### What the agent gets
 
@@ -49,6 +65,8 @@ The site and page URL come from the browser, not the model. To make reporting mo
 You pass `goal` yourself, in general terms, because the agent's task text often contains names and addresses. The task text is never sent.
 
 ## What gets sent
+
+Tips requests send only the site's hostname and your API key.
 
 Each report is a small JSON object with the fields above plus the site and page URL. It goes to `https://herald-api.siddhibansal2604.workers.dev/api/reports`. Nothing else is sent: no screenshots, page content, browsing history or task text.
 
@@ -76,14 +94,16 @@ Reporting never interrupts your agent. If Herald can't be reached, the action re
 ## Options
 
 ```python
-herald_tools(tools=None, *, site=None, herald_url=None, redact=None, on_report=None)
-report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True, redact=None, on_report=None)
+herald_tools(tools=None, *, site=None, herald_url=None, redact=None, on_report=None, api_key=None)
+report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True, redact=None, on_report=None, api_key=None)
+herald_tips(site, *, api_key=None, herald_url=None)
 ```
 
 - `site`: report under a name of your choice instead of the page's hostname.
 - `herald_url`: send reports somewhere else. The `HERALD_URL` environment variable also works.
 - `redact`: values to remove from reports (see above).
 - `on_report`: called with each body sent and any error (see above).
+- `api_key`: your Herald API key. The `HERALD_API_KEY` environment variable also works.
 
 ### Strict tool schemas
 
