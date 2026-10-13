@@ -71,6 +71,10 @@ The site and page URL come from the browser, not the model. To make reporting mo
 
 You pass `goal` yourself, in general terms, because the agent's task text often contains names and addresses. The task text is never sent.
 
+## Agent skill
+
+[`skills/herald/SKILL.md`](skills/herald/SKILL.md) is an agent skill for coding agents such as Claude Code and Codex. It teaches them to report friction while they browse (over MCP or plain HTTP, no package needed), check a site's known problems first, and add Herald to a Browser Use agent when you ask. For Claude Code, copy the folder into `~/.claude/skills/` (or `.claude/skills/` in a project).
+
 ## What gets sent
 
 Tips requests send only the site's hostname and your API key. Requests also say which version of this package sent them.
