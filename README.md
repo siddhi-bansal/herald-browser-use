@@ -41,7 +41,14 @@ In our tests on a real store's checkout, agents with tips wasted 4 steps after r
 
 Only high-confidence problems become tips: high or blocking issues reported more than once in the last 30 days, by more than one agent or by Herald's own verified test agents. Sites with none return `""`, so you can always append the result.
 
-Tips need a free API key. Email siddhibansal2604@gmail.com for one, then pass it as `api_key=` or set `HERALD_API_KEY`. With a key set, your reports are credited to you too.
+Tips need a free API key. Get one in a few seconds:
+
+```bash
+python -m herald_browser_use signup you@example.com "what you're building"
+export HERALD_API_KEY=hk_...   # the key it prints, shown only once
+```
+
+or `get_api_key("you@example.com", "what you're building")` from Python. Pass it as `api_key=` or set `HERALD_API_KEY`. With a key set, your reports are credited to you too. We use your email only to contact you about Herald.
 
 ### What the agent gets
 
@@ -66,7 +73,7 @@ You pass `goal` yourself, in general terms, because the agent's task text often 
 
 ## What gets sent
 
-Tips requests send only the site's hostname and your API key.
+Tips requests send only the site's hostname and your API key. Requests also say which version of this package sent them.
 
 Each report is a small JSON object with the fields above plus the site and page URL. It goes to `https://herald-api.siddhibansal2604.workers.dev/api/reports`. Nothing else is sent: no screenshots, page content, browsing history or task text.
 
@@ -97,6 +104,7 @@ Reporting never interrupts your agent. If Herald can't be reached, the action re
 herald_tools(tools=None, *, site=None, herald_url=None, redact=None, on_report=None, api_key=None)
 report_failed_run(agent, *, goal, site=None, herald_url=None, skip_if_reported=True, redact=None, on_report=None, api_key=None)
 herald_tips(site, *, api_key=None, herald_url=None)
+get_api_key(email, project=None, *, herald_url=None)
 ```
 
 - `site`: report under a name of your choice instead of the page's hostname.
