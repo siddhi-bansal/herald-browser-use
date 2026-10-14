@@ -79,7 +79,7 @@ You pass `goal` yourself, in general terms, because the agent's task text often 
 
 Tips requests send only the site's hostname and your API key. Requests also say which version of this package sent them.
 
-Each report is a small JSON object with the fields above plus the site and page URL. It goes to `https://herald-api.siddhibansal2604.workers.dev/api/reports`. Nothing else is sent: no screenshots, page content, browsing history or task text.
+Each report is a small JSON object with the fields above plus the site and page URL, the browser-use version and model name (e.g. `browser-use 0.13.11, claude-sonnet-5-5`), and whether the browser is headless, cloud or a visible local one. Sites' bot checks treat those very differently, so it helps read the report. It goes to `https://herald-api.siddhibansal2604.workers.dev/api/reports`. Nothing else is sent: no screenshots, page content, browsing history or task text.
 
 Personal data is removed before anything is sent:
 
