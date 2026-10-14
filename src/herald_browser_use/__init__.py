@@ -21,11 +21,13 @@ from importlib.metadata import PackageNotFoundError, version
 import os
 import re
 from collections.abc import Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Optional
 from urllib.parse import urlparse
 
 import httpx
 from browser_use import ActionResult, Tools
+from browser_use.browser import BrowserSession
+from browser_use.llm.base import BaseChatModel
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
@@ -185,6 +187,31 @@ MAX_LENGTHS = {
 }
 
 
+def _agent_env(llm: Any, browser_session: Any) -> dict[str, str]:
+	"""Which agent sent a report, for Herald's optional `agent` and `browser` fields.
+
+	Bot checks treat a hosted or headless browser very differently from a person's
+	own, so Herald shows this next to each report. Never raises; leaves out what
+	it can't tell.
+	"""
+	env: dict[str, str] = {}
+	try:
+		bu = version('browser-use')
+	except PackageNotFoundError:
+		bu = None
+	model = getattr(llm, 'model', None) or getattr(llm, 'model_name', None)
+	env['agent'] = ', '.join(p for p in (f'browser-use {bu}' if bu else 'browser-use', str(model) if model else None) if p)
+	profile = getattr(browser_session, 'browser_profile', None)
+	if profile is not None:
+		if getattr(profile, 'use_cloud', False) or getattr(profile, 'headless', None):
+			env['browser'] = 'cloud'  # Browser Use Cloud, or headless: what bot checks see as automated
+		elif getattr(profile, 'cdp_url', None):
+			env['browser'] = 'unknown'  # connected to an existing browser: could be the person's or a hosted one
+		elif getattr(profile, 'headless', None) is False:
+			env['browser'] = 'user'  # a visible browser on this machine
+	return env
+
+
 async def _send(
 	report: dict[str, Any],
 	herald_url: str | None,
@@ -276,8 +303,19 @@ def herald_tools(
 	# No `from __future__ import annotations` in this file: browser-use matches
 	# injected parameters like page_url by their real (non-string) annotation.
 	@tools.action(TOOL_DESCRIPTION, param_model=FrictionParams)
-	async def report_friction(params: FrictionParams, page_url: str) -> ActionResult:
-		report = {'site': _site_for(page_url, site), 'page_url': page_url, **params.model_dump()}
+	# Optional[...] (not `X | None`): browser-use only recognizes typing.Optional on injected parameters.
+	async def report_friction(
+		params: FrictionParams,
+		page_url: str,
+		browser_session: Optional[BrowserSession] = None,
+		page_extraction_llm: Optional[BaseChatModel] = None,
+	) -> ActionResult:
+		report = {
+			'site': _site_for(page_url, site),
+			'page_url': page_url,
+			**params.model_dump(),
+			**_agent_env(page_extraction_llm, browser_session),
+		}
 		error = await _send(report, herald_url, client, redact_values, on_report, api_key)
 		if error:
 			return ActionResult(error=f'{error}. Continue your task.')
@@ -359,6 +397,7 @@ async def report_failed_run(
 			'what_i_tried': what_i_tried,
 			'what_went_wrong': what_went_wrong,
 			'severity': 'blocking',
+			**_agent_env(getattr(agent, 'llm', None), getattr(agent, 'browser_session', None)),
 		},
 		herald_url,
 		client,

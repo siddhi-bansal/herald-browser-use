@@ -1,4 +1,5 @@
 import json
+from importlib.metadata import version
 from types import SimpleNamespace
 
 import httpx
@@ -75,9 +76,25 @@ async def test_action_posts_report_with_site_from_page():
 				'element': "'USE THIS ADDRESS' button",
 				'what_went_wrong': 'Nothing happened',
 				'severity': 'blocking',
+				'agent': f'browser-use {version("browser-use")}',
 			},
 		}
 	]
+
+
+async def test_reports_say_which_agent_and_browser_sent_them():
+	client, sent = recording_client()
+	action = get_action(herald_tools(herald_url='https://h.test', client=client))
+	params = FrictionParams(goal='g', what_i_tried='t', what_went_wrong='w', severity='high')
+	llm = SimpleNamespace(model='claude-sonnet-5-5')
+
+	def session(**profile):
+		return SimpleNamespace(browser_profile=SimpleNamespace(**{'use_cloud': False, 'cdp_url': None, 'headless': None, **profile}))
+
+	for profile, expected in [({'headless': True}, 'cloud'), ({'use_cloud': True}, 'cloud'), ({'headless': False}, 'user'), ({'cdp_url': 'ws://x'}, 'unknown')]:
+		await action.function(params=params, page_url='https://acme.com/', browser_session=session(**profile), page_extraction_llm=llm)
+		assert sent[-1]['body']['browser'] == expected
+	assert sent[-1]['body']['agent'] == f'browser-use {version("browser-use")}, claude-sonnet-5-5'
 
 
 async def test_action_returns_error_instead_of_raising():
