@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "herald-browser-use"
-version = "0.1.0"
+version = "0.2.0"
 description = "Let your browser-use agent report where it got stuck on a website"
 readme = "README.md"
 license = "MIT"
