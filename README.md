@@ -61,6 +61,7 @@ or `get_api_key("you@example.com", "what you're building")` from Python. Pass it
 | `element` (optional) | 'USE THIS ADDRESS' button |
 | `what_went_wrong` | Nothing happened; checkout didn't move on |
 | `error_shown` (optional) | none |
+| `what_worked` (optional) | Reloaded the page and clicked Continue again |
 | `severity` | `low`, `medium`, `high` or `blocking` |
 
 The site and page URL come from the browser, not the model. To make reporting more reliable, add a line to your task, e.g. *"If you get stuck on a website, call report_friction."*

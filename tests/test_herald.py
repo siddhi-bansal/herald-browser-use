@@ -38,7 +38,7 @@ def get_action(tools):
 def test_registers_report_friction_with_page_url_injected():
 	action = get_action(herald_tools())
 	fields = set(action.param_model.model_fields)
-	assert fields == {'goal', 'what_i_tried', 'element', 'what_went_wrong', 'error_shown', 'severity'}
+	assert fields == {'goal', 'what_i_tried', 'element', 'what_went_wrong', 'error_shown', 'what_worked', 'severity'}
 	assert 'page_url' not in fields  # browser-use fills it from the current page
 	assert 'site owners' in action.description or "site's owners" in action.description
 
@@ -71,6 +71,7 @@ async def test_action_posts_report_with_site_from_page():
 			'body': {
 				'site': 'www.kuhl.com',
 				'page_url': 'https://www.kuhl.com/checkout?step=2',
+				'channel': 'browser',
 				'goal': 'Check out as a guest',
 				'what_i_tried': 'Filled the address and clicked Continue',
 				'element': "'USE THIS ADDRESS' button",
@@ -191,7 +192,11 @@ async def test_reports_are_scrubbed_before_sending():
 	client, sent = recording_client()
 	action = get_action(herald_tools(client=client, redact=['Jane Doe']))
 	params = FrictionParams(
-		goal='Check out', what_i_tried='Entered Jane Doe and jane@x.com', what_went_wrong='w', severity='low'
+		goal='Check out',
+		what_i_tried='Entered Jane Doe and jane@x.com',
+		what_went_wrong='w',
+		what_worked='Retyped Jane Doe and clicked Continue again',
+		severity='low',
 	)
 	await action.function(params=params, page_url='https://acme.com/?email=jane@x.com')
 	body = json.dumps(sent[0]['body'])

@@ -46,7 +46,7 @@ TOOL_DESCRIPTION = (
 	"information you couldn't find (e.g. shipping costs, return policy, sizes), a button or link that "
 	"didn't work, a form that rejected valid input, a checkout or payment error, a confusing layout, or "
 	'anything that made the task harder than it should be. Report even if you eventually succeeded. '
-	'Report each problem once, not again on every retry. '
+	'Report each problem once, not again on every retry. If you found a way past it, say what worked, so other agents can try it. '
 	'Be specific and factual: name the exact button or field involved and copy any error text word for word. '
 	'Do not include personal data such as card numbers, passwords or addresses.'
 )
@@ -79,6 +79,11 @@ class FrictionParams(BaseModel):
 	error_shown: str | None = Field(
 		default=None,
 		description='Any error or warning the page showed, copied word for word. Write "none" if the page showed no error.',
+	)
+	what_worked: str | None = Field(
+		default=None,
+		description='If you got past the problem, the step that worked, e.g. "Reloading the page and clicking Continue again" or '
+		'"Using the Guest checkout link under the sign-in form". Leave out if nothing worked.',
 	)
 	severity: Severity = Field(
 		description='low = minor annoyance; medium = slowed you down; high = needed a workaround or guess; '
@@ -184,6 +189,7 @@ MAX_LENGTHS = {
 	'element': 300,
 	'what_went_wrong': 4000,
 	'error_shown': 1000,
+	'what_worked': 1000,
 }
 
 
@@ -314,6 +320,7 @@ def herald_tools(
 			'site': _site_for(page_url, site),
 			'page_url': page_url,
 			**params.model_dump(),
+			'channel': 'browser',  # browser-use clicks through pages
 			**_agent_env(page_extraction_llm, browser_session),
 		}
 		error = await _send(report, herald_url, client, redact_values, on_report, api_key)
