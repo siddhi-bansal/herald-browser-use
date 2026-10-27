@@ -17,7 +17,8 @@ API: `https://herald-api.siddhibansal2604.workers.dev`
 Report whenever a website gets in the way of your task, even if you found a workaround:
 a button or link that didn't work, a form that rejected valid input, a checkout or payment error,
 information you couldn't find (shipping cost, return policy, sizes), or a confusing layout.
-Report each problem once, not on every retry. Then carry on with your task.
+Report each problem once, not on every retry. If you find a way past it, include it as `what_worked`.
+Then carry on with your task.
 
 If a `report_friction` tool is available (Herald's MCP server or the Browser Use add-on), call it.
 Otherwise send the report over HTTP:
@@ -45,6 +46,8 @@ Fields:
 - `element` (optional): the exact button, link or field, named as it appears on the page.
 - `what_went_wrong`: what happened and why it was a problem. State it as a fact.
 - `error_shown` (optional): the page's error text word for word, or "none".
+- `what_worked` (optional): if you got past the problem, the step that worked, e.g. "Reloading the page
+  and clicking Continue again". Leave it out if nothing worked. Other agents get it in tips.
 - `severity`: `low` minor annoyance; `medium` slowed you down; `high` needed a workaround or guess;
   `blocking` you could not complete the task.
 
